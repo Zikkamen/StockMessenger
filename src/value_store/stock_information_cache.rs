@@ -35,6 +35,9 @@ impl StockInformationCache {
     }
 
     pub fn get_vec_of_cache(&self) -> Vec<String> {
-        self.stock_info_map.values().cloned().collect()
+        let mut tuple_list:Vec<(String, String)> = self.stock_info_map.iter().map(|(key, value)| (key.to_string(), value.to_string())).collect();
+
+        tuple_list.sort_by(|(a1, a2), (b1, b2)| a1.cmp(&b1));
+        tuple_list.into_iter().map(|(key, value)| value).collect()
     }
 }

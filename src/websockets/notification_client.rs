@@ -13,13 +13,13 @@ use crate::value_store::stock_information_cache::StockInformationCache;
 
 pub struct NotificationClient {
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-    subscriber_map: Arc<RwLock<HashMap::<(String, String), Vec<usize>>>>,
+    subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationClient {
     pub fn new(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-               subscriber_map: Arc<RwLock<HashMap::<(String, String), Vec<usize>>>>,
+               subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
         NotificationClient{ 
             connection_queue: connection_queue, 

@@ -3,6 +3,7 @@ use std::sync::RwLock;
 use std::sync::Arc;
 use std::time::Duration;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use websocket::sync::Server;
 use websocket::{OwnedMessage};
@@ -14,13 +15,13 @@ use crate::value_store::stock_information_cache::StockInformationCache;
 
 pub struct NotificationServer {
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-    subscriber_map: Arc<RwLock<HashMap::<(String, String), Vec<usize>>>>,
+    subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationServer {
     pub fn new(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-               subscriber_map: Arc<RwLock<HashMap::<(String, String), Vec<usize>>>>,
+               subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
         NotificationServer{ 
             connection_queue: connection_queue,
@@ -35,7 +36,7 @@ impl NotificationServer {
 }
 
 fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-                         subscriber_map: Arc<RwLock<HashMap::<(String, String), Vec<usize>>>>,
+                         subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
                          stock_information_cache: Arc<RwLock<StockInformationCache>>){
     let server = Server::bind("127.0.0.1:9002").unwrap();
 
@@ -59,25 +60,25 @@ fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<Strin
                 let key_stock = ("stock".to_string(), parsed_json.1.clone());
 
                 if !subscriber_map.read().unwrap().contains_key(&key_stock) {
-                    subscriber_map.write().unwrap().insert(key_stock, vec![id]);
+                    subscriber_map.write().unwrap().insert(key_stock.clone(), HashSet::from([id]));
                 } else {
-                    subscriber_map.write().unwrap().get_mut(&key_stock).unwrap().push(id);
+                    subscriber_map.write().unwrap().get_mut(&key_stock).unwrap().insert(id);
                 }
 
                 connection_queue.write().unwrap().insert(id, stock_information_cache.read().unwrap().get_vec_of_stock(parsed_json.1));
+                start_websocket(sender, Arc::clone(&connection_queue), Arc::clone(&subscriber_map), key_stock, id);
             } else if &parsed_json.0 == "interval" {
                 let key_stock = ("interval".to_string(), parsed_json.1.clone());
 
                 if !subscriber_map.read().unwrap().contains_key(&key_stock) {
-                    subscriber_map.write().unwrap().insert(key_stock, vec![id]);
+                    subscriber_map.write().unwrap().insert(key_stock.clone(), HashSet::from([id]));
                 } else {
-                    subscriber_map.write().unwrap().get_mut(&key_stock).unwrap().push(id);
+                    subscriber_map.write().unwrap().get_mut(&key_stock).unwrap().insert(id);
                 }
 
                 connection_queue.write().unwrap().insert(id, stock_information_cache.read().unwrap().get_vec_of_interval(parsed_json.1.parse::<usize>().unwrap()));
+                start_websocket(sender, Arc::clone(&connection_queue), Arc::clone(&subscriber_map), key_stock, id);
             }
-
-            start_websocket(sender, Arc::clone(&connection_queue), id);
 
             println!("Spawned websocket {}", id);
             id += 1;
@@ -87,6 +88,8 @@ fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<Strin
 
 fn start_websocket(mut sender: Writer<TcpStream>,
                    connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
+                   subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
+                   key: (String, String),
                    id: usize) {
     thread::spawn(move || {
         let thread_id = id;
@@ -111,6 +114,7 @@ fn start_websocket(mut sender: Writer<TcpStream>,
                         Err(e) => { 
                             println!("Error sending message {}. Closing Websocket {}", e, thread_id);
                             
+                            subscriber_map.write().unwrap().get_mut(&key).unwrap().remove(&thread_id);
                             connection_queue.write().unwrap().remove(&thread_id);
                             
                             return;
@@ -132,8 +136,9 @@ fn start_websocket(mut sender: Writer<TcpStream>,
                 match sender.send_message(&OwnedMessage::Text(update.to_string())) {
                     Ok(v) => v,
                     Err(e) => { 
-                        println!("Error sending message {}. Closing Websocket {}", e, thread_id); 
-                        
+                        println!("Error sending message {}. Closing Websocket {}", e, thread_id);
+
+                        subscriber_map.write().unwrap().get_mut(&key).unwrap().remove(&thread_id);
                         connection_queue.write().unwrap().remove(&thread_id);
                         
                         return;

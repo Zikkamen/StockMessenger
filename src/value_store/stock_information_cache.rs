@@ -55,7 +55,7 @@ impl StockInformation {
             "vm" => self.volume_moved = value.parse::<i64>().unwrap(),
             "nt" => self.num_of_trades = value.parse::<i64>().unwrap(),
             "t" => self.timestamp = value.parse::<i64>().unwrap(),
-            _ => println!("Error key not found {}", key),
+            _ => (),
         }
     }
 
@@ -85,8 +85,8 @@ impl StockInformation {
 }
 
 pub struct StockInformationCache {
-    stock_info_map: HashMap<usize, HashMap<String, StockInformation>>,
-    stock_history_map: HashMap<String, VecDeque<StockInformation>>,
+    stock_info_map: HashMap<String, StockInformation>,
+    stock_history_map: HashMap<(String, usize), VecDeque<StockInformation>>,
 }
 
 impl StockInformationCache {
@@ -95,81 +95,75 @@ impl StockInformationCache {
     }
 
     pub fn add_json(&mut self, json_data: &str) -> (String, usize, String) {
-        let mut tmp: String = String::new();
-        let mut key: String = String::new();
+        let stock_info:StockInformation = parse_json_to_stock_info(json_data);
 
-        let mut stock_info = StockInformation::new();
+        self.stock_info_map.insert(stock_info.stock_name.clone(), stock_info.clone());
 
-        for p in json_data.chars() {
-            if p == ' ' || p == '\n' || p == '\t' || p == '\"' || p == '{' || p == '}' { 
-                continue; 
-            }
-            
-            if p == ':' || p == ',' {
-                if key.len() == 0 {
-                    key = tmp;
-                } else {
-                    stock_info.insert_data(key, tmp);
-                    key = String::new();
-                }
-                
-                tmp = String::new();
-                
-                continue;
-            }
+        let key:(String, usize) = (stock_info.stock_name.clone(), stock_info.stock_interval);
 
-            tmp.push(p);
+        if !self.stock_history_map.contains_key(&key) {
+            self.stock_history_map.insert(key.clone(), VecDeque::new());
         }
 
-        stock_info.insert_data(key, tmp);
+        let stock_history = self.stock_history_map.get_mut(&key).unwrap();
 
-        let stock_info_json = stock_info.to_string();
-        let stock_info_interval = stock_info.stock_interval;
-        let stock_info_name = stock_info.stock_name.clone();
-
-        if !self.stock_info_map.contains_key(&stock_info.stock_interval) {
-            self.stock_info_map.insert(stock_info.stock_interval, HashMap::new());
+        if stock_history.len() > 120 { 
+            stock_history.pop_front(); 
         }
 
-        self.stock_info_map.get_mut(&stock_info.stock_interval)
-            .unwrap()
-            .insert(stock_info.stock_name.clone(), stock_info.clone());
+        stock_history.push_back(stock_info.clone());
 
-        if !self.stock_history_map.contains_key(&stock_info.stock_name) {
-            self.stock_history_map.insert(stock_info.stock_name.clone(), VecDeque::new());
-        }
-
-        let stock_history = self.stock_history_map.get_mut(&stock_info.stock_name).unwrap();
-
-        if stock_info.stock_interval == 1{
-            if stock_history.len() > 60 { stock_history.pop_front(); }
-
-            stock_history.push_back(stock_info);
-        }
-
-        (stock_info_name, stock_info_interval, stock_info_json)
+        (key.0, key.1, stock_info.to_string())
     }
 
-    pub fn get_vec_of_interval(&self, stock_interval: usize) -> Vec<String> {
-        match self.stock_info_map.get(&stock_interval) {
-            Some(v) => {
-                let mut string_pair:Vec<(String, String)> = v.values()
+    pub fn get_vec_dashboard(&self) -> Vec<String> {
+        let mut string_pair:Vec<(String, String)> = self.stock_info_map.values()
                     .map(|stock_info| (stock_info.stock_name.clone(), stock_info.to_string()))
                     .collect();
-                string_pair.sort_by(|a, b| a.0.cmp(&b.0));
 
-                string_pair.into_iter().map(|stock_tuple| stock_tuple.1).collect()
-            },
-            None => Vec::new(),
-        }
+        string_pair.sort_by(|a, b| a.0.cmp(&b.0));
+
+        string_pair.into_iter().map(|stock_tuple| stock_tuple.1).collect()
     }
 
-    pub fn get_vec_of_stock(&self, stock_name: String) -> Vec<String> {
-        match self.stock_history_map.get(&stock_name) {
+    pub fn get_vec_of_stock(&self, key: &(String, usize)) -> Vec<String> {
+        match self.stock_history_map.get(key) {
             Some(v) => {
                 v.into_iter().map(|stock_info| stock_info.to_string()).collect()
             },
             None => Vec::new(),
         }
     }
+}
+
+pub fn parse_json_to_stock_info(json_data: &str) -> StockInformation {
+    let mut tmp: String = String::new();
+    let mut key: String = String::new();
+    let mut stock_info = StockInformation::new();
+
+    for p in json_data.chars() {
+        if p == ' ' || p == '\n' || p == '\t' || p == '\"' || p == '{' || p == '}' { 
+            continue; 
+        }
+        
+        if p == ':' || p == ',' {
+            match key.len() {
+                0 => key = tmp,
+                _ => {
+                    stock_info.insert_data(key, tmp);
+                    key = String::new();
+                }
+            }
+            
+            tmp = String::new();
+            
+            continue;
+        }
+
+        tmp.push(p);
+    }
+
+    stock_info.insert_data(key, tmp);
+
+    stock_info
 }

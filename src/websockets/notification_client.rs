@@ -7,19 +7,18 @@ use std::collections::HashSet;
 
 use websocket::ClientBuilder;
 use websocket::{OwnedMessage};
-use websocket::server::upgrade::WsUpgrade;
 
 use crate::value_store::stock_information_cache::StockInformationCache;
 
 pub struct NotificationClient {
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-    subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
+    subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationClient {
     pub fn new(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-               subscriber_map: Arc<RwLock<HashMap::<(String, String), HashSet<usize>>>>,
+               subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
         NotificationClient{ 
             connection_queue: connection_queue, 
@@ -34,7 +33,7 @@ impl NotificationClient {
     
             let mut client = match ClientBuilder::new("ws://localhost:9004").unwrap().connect_insecure() {
                 Ok(v) => v,
-                Err(v) => { thread::sleep(Duration::from_millis(1000)); continue },
+                Err(_v) => { thread::sleep(Duration::from_millis(1000)); continue },
             };
     
             loop {
@@ -50,10 +49,11 @@ impl NotificationClient {
                     OwnedMessage::Text(txt) => {
                         let text: String = txt.parse().unwrap();
                         let (name, interval, json) = self.stock_information_cache.write().unwrap().add_json(&text);
+                        let key:(String, usize) = (name, interval);
 
                         let mut ids_to_update:HashSet<usize> = HashSet::new();
 
-                        match self.subscriber_map.read().unwrap().get(&("stock".to_string(), name.clone())){
+                        match self.subscriber_map.read().unwrap().get(&key){
                             Some(list_of_ids) => {
                                 for id in list_of_ids.iter() {
                                     ids_to_update.insert(*id);
@@ -62,13 +62,15 @@ impl NotificationClient {
                             None => (),
                         }
                         
-                        match self.subscriber_map.read().unwrap().get(&("interval".to_string(), interval.to_string())){
-                            Some(list_of_ids) => {
-                                for id in list_of_ids.iter() {
-                                    ids_to_update.insert(*id);
-                                }
-                            },
-                            None => (),
+                        if key.1 == 1 {
+                            match self.subscriber_map.read().unwrap().get(&("*".to_string(), 1)){
+                                Some(list_of_ids) => {
+                                    for id in list_of_ids.iter() {
+                                        ids_to_update.insert(*id);
+                                    }
+                                },
+                                None => (),
+                            }
                         }
 
                         let mut connection_vec = self.connection_queue.write().unwrap();

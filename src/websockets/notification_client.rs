@@ -48,7 +48,7 @@ impl NotificationClient {
                 match message {
                     OwnedMessage::Text(txt) => {
                         let text: String = txt.parse().unwrap();
-                        let (name, interval, json) = self.stock_information_cache.write().unwrap().add_json(&text);
+                        let (name, interval, volume_moved, json) = self.stock_information_cache.write().unwrap().add_json(&text);
                         let key:(String, usize) = (name, interval);
 
                         let mut ids_to_update:HashSet<usize> = HashSet::new();
@@ -62,7 +62,7 @@ impl NotificationClient {
                             None => (),
                         }
                         
-                        if key.1 == 1 {
+                        if key.1 == 1 && volume_moved > 0 {
                             match self.subscriber_map.read().unwrap().get(&("*".to_string(), 1)){
                                 Some(list_of_ids) => {
                                     for id in list_of_ids.iter() {

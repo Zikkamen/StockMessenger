@@ -94,7 +94,7 @@ impl StockInformationCache {
         StockInformationCache{ stock_info_map:HashMap::new(), stock_history_map:HashMap::new() }
     }
 
-    pub fn add_json(&mut self, json_data: &str) -> (String, usize, String) {
+    pub fn add_json(&mut self, json_data: &str) -> (String, usize, i64, String) {
         let stock_info:StockInformation = parse_json_to_stock_info(json_data);
 
         self.stock_info_map.insert(stock_info.stock_name.clone(), stock_info.clone());
@@ -113,7 +113,7 @@ impl StockInformationCache {
 
         stock_history.push_back(stock_info.clone());
 
-        (key.0, key.1, stock_info.to_string())
+        (key.0, key.1, stock_info.volume_moved, stock_info.to_string())
     }
 
     pub fn get_vec_dashboard(&self) -> Vec<String> {
@@ -133,6 +133,10 @@ impl StockInformationCache {
             },
             None => Vec::new(),
         }
+    }
+
+    pub fn has_key(&self, key: &(String, usize)) -> bool {
+        self.stock_history_map.contains_key(key)
     }
 }
 

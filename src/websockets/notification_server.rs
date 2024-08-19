@@ -77,7 +77,7 @@ fn start_websocket_receiver(mut receiver: Reader<TcpStream>,
                 },
                 Err(e) =>{
                     println!("Error in message {} thread: {}", e, id);
-                    continue;
+                    break;
                 },
             };
 

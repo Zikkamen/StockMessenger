@@ -129,7 +129,9 @@ impl StockInformationCache {
     pub fn get_vec_of_stock(&self, key: &(String, usize)) -> Vec<String> {
         match self.stock_history_map.get(key) {
             Some(v) => {
-                v.into_iter().map(|stock_info| stock_info.to_string()).collect()
+                let mut output = v.into_iter().map(|stock_info| stock_info.to_string()).collect::<Vec<String>>();
+                output.push("End of update".to_string());
+                output
             },
             None => Vec::new(),
         }

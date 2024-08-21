@@ -47,6 +47,7 @@ fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<Strin
             let client = connection.accept().unwrap();
             let (receiver, sender) = client.split().unwrap();
 
+            connection_queue.write().unwrap().insert(id, Vec::new());
             
             start_websocket_receiver(receiver, Arc::clone(&connection_queue), Arc::clone(&subscriber_map), Arc::clone(&stock_information_cache), id);
             start_websocket_sender(sender, Arc::clone(&connection_queue), id);
@@ -65,14 +66,12 @@ fn start_websocket_receiver(mut receiver: Reader<TcpStream>,
     thread::spawn(move || {
         let mut key_stock:(String, usize) = (String::new(), 0);
 
-        connection_queue.write().unwrap().insert(id, Vec::new());
-
         loop {
             let message_json:String = match receiver.recv_message() {
                 Ok(message) => match message {
                     OwnedMessage::Text(txt) => txt.parse().unwrap(),
-                    OwnedMessage::Ping(txt) => continue,
-                    OwnedMessage::Pong(txt) => continue,
+                    OwnedMessage::Ping(_) => continue,
+                    OwnedMessage::Pong(_) => continue,
                     _ => break,
                 },
                 Err(e) =>{
@@ -157,9 +156,7 @@ fn start_websocket_sender(mut sender: Writer<TcpStream>,
             for update in connection_vec.iter() {
                 match sender.send_message(&OwnedMessage::Text(update.to_string())) {
                     Ok(v) => v,
-                    Err(e) => { 
-                        break;
-                    },
+                    Err(_) => break,
                 }
             }
         }
@@ -177,10 +174,8 @@ fn send_ping(sender: &mut Writer<TcpStream>, ping_cnt: &mut usize) -> bool {
 
     match sender.send_message(&OwnedMessage::Ping(Vec::new())) {
         Ok(v) => v,
-        Err(e) => { 
-            return false;
-        },
-    }
+        Err(_) =>  return false,
+    };
 
     *ping_cnt = 0;
 

@@ -44,19 +44,27 @@ fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<Strin
         let mut id:usize = 0;
 
         for connection in server.filter_map(Result::ok) {
-            let client = match connection.accept() {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+            let connection_queue_cloned = connection_queue.clone();
+            let subscriber_map_cloned = subscriber_map.clone();
+            let stock_information_cache_cloned = stock_information_cache.clone();
+            let id_cloned = id;
 
-            let (receiver, sender) = client.split().unwrap();
+            thread::spawn(move || {
+                let client = match connection.accept() {
+                    Ok(v) => v,
+                    Err(_) => return,
+                };
+    
+                let (receiver, sender) = client.split().unwrap();
+    
+                connection_queue_cloned.write().unwrap().insert(id, Vec::new());
+                
+                start_websocket_receiver(receiver, connection_queue_cloned.clone(), subscriber_map_cloned, stock_information_cache_cloned, id_cloned);
+                start_websocket_sender(sender, connection_queue_cloned, id_cloned);
+    
+                println!("Spawned websocket {}", id_cloned);
+            });
 
-            connection_queue.write().unwrap().insert(id, Vec::new());
-            
-            start_websocket_receiver(receiver, Arc::clone(&connection_queue), Arc::clone(&subscriber_map), Arc::clone(&stock_information_cache), id);
-            start_websocket_sender(sender, Arc::clone(&connection_queue), id);
-
-            println!("Spawned websocket {}", id);
             id += 1;
         }
     });

@@ -44,7 +44,11 @@ fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<Strin
         let mut id:usize = 0;
 
         for connection in server.filter_map(Result::ok) {
-            let client = connection.accept().unwrap();
+            let client = match connection.accept() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
             let (receiver, sender) = client.split().unwrap();
 
             connection_queue.write().unwrap().insert(id, Vec::new());

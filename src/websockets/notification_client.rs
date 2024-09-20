@@ -1,12 +1,13 @@
 use std::thread;
-use std::sync::RwLock;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
+use std::net::TcpListener;
 
-use websocket::ClientBuilder;
-use websocket::{OwnedMessage};
+use tungstenite::{
+    connect,
+    Message,
+};
 
 use crate::value_store::stock_information_cache::StockInformationCache;
 
@@ -31,13 +32,17 @@ impl NotificationClient {
         loop {
             println!("Trying to Connect");
     
-            let mut client = match ClientBuilder::new("ws://localhost:9004").unwrap().connect_insecure() {
+            let (mut client, _response) = match connect("ws://localhost:9004") {
                 Ok(v) => v,
-                Err(_v) => { thread::sleep(Duration::from_millis(1000)); continue },
+                Err(_v) => { 
+                    thread::sleep(Duration::from_millis(1000)); 
+                    
+                    continue;
+                },
             };
     
             loop {
-                let message:OwnedMessage = match client.recv_message() {
+                let message = match client.read() {
                     Ok(p) => p,
                     Err(e) => {
                         println!("Error receiving message {} \n Closing Client", e);
@@ -46,8 +51,8 @@ impl NotificationClient {
                 };
     
                 match message {
-                    OwnedMessage::Text(txt) => {
-                        let text: String = txt.parse().unwrap();
+                    msg @ Message::Text(_) => {
+                        let text: String = msg.into_text().unwrap();
                         let (name, interval, volume_moved, json) = self.stock_information_cache.write().unwrap().add_json(&text);
                         let key:(String, usize) = (name, interval);
 

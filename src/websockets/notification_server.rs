@@ -1,15 +1,15 @@
 use std::thread;
-use std::sync::RwLock;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
+use std::net::{TcpStream, TcpListener};
 
-use websocket::sync::Server;
-use websocket::{OwnedMessage};
-use websocket::sync::Writer;
-use websocket::sync::Reader;
-use websocket::stream::sync::TcpStream;
+use tungstenite::{
+    accept,
+    handshake::server::{Request, Response},
+    protocol::{Role, WebSocket},
+    Message,
+};
 
 use crate::value_store::stock_information_cache::StockInformationCache;
 
@@ -38,29 +38,32 @@ impl NotificationServer {
 fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                          subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
                          stock_information_cache: Arc<RwLock<StockInformationCache>>){
-    let server = Server::bind("127.0.0.1:9002").unwrap();
+    let server = TcpListener::bind("127.0.0.1:9002").unwrap();
 
     thread::spawn(move || {
         let mut id:usize = 0;
 
-        for connection in server.filter_map(Result::ok) {
+        for stream in server.incoming() {
             let connection_queue_cloned = connection_queue.clone();
             let subscriber_map_cloned = subscriber_map.clone();
             let stock_information_cache_cloned = stock_information_cache.clone();
             let id_cloned = id;
 
             thread::spawn(move || {
-                let client = match connection.accept() {
-                    Ok(v) => v,
-                    Err(_) => return,
-                };
-    
-                let (receiver, sender) = client.split().unwrap();
+                let stream_read = stream.unwrap();
+
+                stream_read.set_read_timeout(Some(Duration::from_millis(1000))).unwrap();
+                stream_read.set_write_timeout(Some(Duration::from_millis(1000))).unwrap();
+
+                let send_stream = stream_read.try_clone().unwrap();
+
+                let mut websocket_read = accept(stream_read).unwrap();
+                let mut websocket_send = WebSocket::from_raw_socket(send_stream, Role::Server, None);
     
                 connection_queue_cloned.write().unwrap().insert(id, Vec::new());
                 
-                start_websocket_receiver(receiver, connection_queue_cloned.clone(), subscriber_map_cloned, stock_information_cache_cloned, id_cloned);
-                start_websocket_sender(sender, connection_queue_cloned, id_cloned);
+                start_websocket_receiver(websocket_read, connection_queue_cloned.clone(), subscriber_map_cloned, stock_information_cache_cloned, id_cloned);
+                start_websocket_sender(websocket_send, connection_queue_cloned, id_cloned);
     
                 println!("Spawned websocket {}", id_cloned);
             });
@@ -70,7 +73,7 @@ fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<Strin
     });
 }
 
-fn start_websocket_receiver(mut receiver: Reader<TcpStream>,
+fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
                             connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                             subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
                             stock_information_cache: Arc<RwLock<StockInformationCache>>,
@@ -79,11 +82,10 @@ fn start_websocket_receiver(mut receiver: Reader<TcpStream>,
         let mut key_stock:(String, usize) = (String::new(), 0);
 
         loop {
-            let message_json:String = match receiver.recv_message() {
+            let message_json:String = match receiver.read() {
                 Ok(message) => match message {
-                    OwnedMessage::Text(txt) => txt.parse().unwrap(),
-                    OwnedMessage::Ping(_) => continue,
-                    OwnedMessage::Pong(_) => continue,
+                    msg @ Message::Text(_) => msg.into_text().unwrap(),
+                    _msg @ Message::Ping(_) | _msg @ Message::Pong(_) => continue,
                     _ => break,
                 },
                 Err(e) =>{
@@ -138,14 +140,16 @@ fn start_websocket_receiver(mut receiver: Reader<TcpStream>,
     });
 }
 
-fn start_websocket_sender(mut sender: Writer<TcpStream>,
+fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
                    connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                    id: usize) {
     thread::spawn(move || {
         let mut ping_cnt:usize = 0;
 
         loop {
-            if connection_queue.read().unwrap().len() > 1000 { continue; }
+            if connection_queue.read().unwrap().len() > 1000 { 
+                continue; 
+            }
 
             let connection_vec = match connection_queue.read().unwrap().get(&id) {
                 Some(v) => v.clone(),
@@ -155,7 +159,9 @@ fn start_websocket_sender(mut sender: Writer<TcpStream>,
             if connection_vec.len() == 0 {
                 thread::sleep(Duration::from_millis(10));
 
-                if !send_ping(&mut sender, &mut ping_cnt) { break; }
+                if !send_ping(&mut sender, &mut ping_cnt) { 
+                    break; 
+                }
                 
                 continue;
             }
@@ -166,7 +172,7 @@ fn start_websocket_sender(mut sender: Writer<TcpStream>,
             };
 
             for update in connection_vec.iter() {
-                match sender.send_message(&OwnedMessage::Text(update.to_string())) {
+                match sender.send(Message::Text(update.to_string())) {
                     Ok(v) => v,
                     Err(_) => break,
                 }
@@ -179,12 +185,14 @@ fn start_websocket_sender(mut sender: Writer<TcpStream>,
 
 }
 
-fn send_ping(sender: &mut Writer<TcpStream>, ping_cnt: &mut usize) -> bool {
+fn send_ping(sender: &mut WebSocket<TcpStream>, ping_cnt: &mut usize) -> bool {
     *ping_cnt += 1;
 
-    if *ping_cnt < 100 { return true; }
+    if *ping_cnt < 100 { 
+        return true; 
+    }
 
-    match sender.send_message(&OwnedMessage::Ping(Vec::new())) {
+    match sender.send(Message::Ping(Vec::new())) {
         Ok(v) => v,
         Err(_) =>  return false,
     };

@@ -2,7 +2,6 @@ use std::thread;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::collections::{HashSet, HashMap};
-use std::net::TcpListener;
 
 use tungstenite::{
     connect,
@@ -12,16 +11,19 @@ use tungstenite::{
 use crate::value_store::stock_information_cache::StockInformationCache;
 
 pub struct NotificationClient {
+    ip_client: String,
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
     subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationClient {
-    pub fn new(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
+    pub fn new(ip_client: String,
+               connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
-        NotificationClient{ 
+        NotificationClient {
+            ip_client: ip_client, 
             connection_queue: connection_queue, 
             subscriber_map: subscriber_map,
             stock_information_cache: stock_information_cache,
@@ -32,7 +34,7 @@ impl NotificationClient {
         loop {
             println!("Trying to Connect");
     
-            let (mut client, _response) = match connect("ws://localhost:9004") {
+            let (mut client, _response) = match connect(format!("ws://{}", self.ip_client)) {
                 Ok(v) => v,
                 Err(_v) => { 
                     thread::sleep(Duration::from_millis(1000)); 

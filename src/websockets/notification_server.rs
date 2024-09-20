@@ -6,7 +6,6 @@ use std::net::{TcpStream, TcpListener};
 
 use tungstenite::{
     accept,
-    handshake::server::{Request, Response},
     protocol::{Role, WebSocket},
     Message,
 };
@@ -14,16 +13,19 @@ use tungstenite::{
 use crate::value_store::stock_information_cache::StockInformationCache;
 
 pub struct NotificationServer {
+    ip_server: String,
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
     subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationServer {
-    pub fn new(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
+    pub fn new(ip_server: String,
+               connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
         NotificationServer{ 
+            ip_server: ip_server,
             connection_queue: connection_queue,
             subscriber_map: subscriber_map,
             stock_information_cache: stock_information_cache,
@@ -31,46 +33,49 @@ impl NotificationServer {
     }
 
     pub fn start_server(&self) {
-        start_websocketserver(Arc::clone(&self.connection_queue), Arc::clone(&self.subscriber_map), Arc::clone(&self.stock_information_cache));
+        let server = TcpListener::bind(self.ip_server.clone()).unwrap();
+
+        let connection_queue = self.connection_queue.clone();
+        let subscriber_map = self.subscriber_map.clone();
+        let stock_information_cache = self.stock_information_cache.clone();
+
+        thread::spawn(move || {
+            let mut id:usize = 0;
+
+            for stream in server.incoming() {
+                let id_cloned = id;
+                let connection_queue_cloned = connection_queue.clone();
+                let subscriber_map_cloned = subscriber_map.clone();
+                let stock_information_cache_cloned = stock_information_cache.clone();
+
+                thread::spawn(move || {
+                    let stream_read = stream.unwrap();
+                    let send_stream = stream_read.try_clone().unwrap();
+
+                    let websocket_read = accept(stream_read).unwrap();
+                    let websocket_send = WebSocket::from_raw_socket(send_stream, Role::Server, None);
+        
+                    connection_queue_cloned.write().unwrap().insert(id, Vec::new());
+                    
+                    start_websocket_receiver(
+                        websocket_read, connection_queue_cloned.clone(), 
+                        subscriber_map_cloned, stock_information_cache_cloned, 
+                        id_cloned
+                    );
+                    
+                    start_websocket_sender(
+                        websocket_send, 
+                        connection_queue_cloned, 
+                        id_cloned
+                    );
+        
+                    println!("Spawned websocket {}", id_cloned);
+                });
+
+                id += 1;
+            }
+        });
     }
-}
-
-fn start_websocketserver(connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-                         subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
-                         stock_information_cache: Arc<RwLock<StockInformationCache>>){
-    let server = TcpListener::bind("127.0.0.1:9002").unwrap();
-
-    thread::spawn(move || {
-        let mut id:usize = 0;
-
-        for stream in server.incoming() {
-            let connection_queue_cloned = connection_queue.clone();
-            let subscriber_map_cloned = subscriber_map.clone();
-            let stock_information_cache_cloned = stock_information_cache.clone();
-            let id_cloned = id;
-
-            thread::spawn(move || {
-                let stream_read = stream.unwrap();
-
-                stream_read.set_read_timeout(Some(Duration::from_millis(1000))).unwrap();
-                stream_read.set_write_timeout(Some(Duration::from_millis(1000))).unwrap();
-
-                let send_stream = stream_read.try_clone().unwrap();
-
-                let mut websocket_read = accept(stream_read).unwrap();
-                let mut websocket_send = WebSocket::from_raw_socket(send_stream, Role::Server, None);
-    
-                connection_queue_cloned.write().unwrap().insert(id, Vec::new());
-                
-                start_websocket_receiver(websocket_read, connection_queue_cloned.clone(), subscriber_map_cloned, stock_information_cache_cloned, id_cloned);
-                start_websocket_sender(websocket_send, connection_queue_cloned, id_cloned);
-    
-                println!("Spawned websocket {}", id_cloned);
-            });
-
-            id += 1;
-        }
-    });
 }
 
 fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,

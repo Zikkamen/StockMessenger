@@ -33,7 +33,7 @@ impl WebSocketServer {
         notification_server.start_server();
 
         let mut notification_client = NotificationClient::new(
-            self.client.clone(),
+            self.ip_client.clone(),
             Arc::clone(&connection_queue), 
             Arc::clone(&subscriber_map), 
             Arc::clone(&stock_information_cache)

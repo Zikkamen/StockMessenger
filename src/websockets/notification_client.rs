@@ -42,6 +42,8 @@ impl NotificationClient {
                     continue;
                 },
             };
+
+            let _ = client.send(Message::Text("{stock: *}".to_string()));
     
             loop {
                 let message = match client.read() {

@@ -97,7 +97,9 @@ impl StockInformationCache {
     pub fn add_json(&mut self, json_data: &str) -> (String, usize, i64, String) {
         let stock_info:StockInformation = parse_json_to_stock_info(json_data);
 
-        self.stock_info_map.insert(stock_info.stock_name.clone(), stock_info.clone());
+        if stock_info.volume_moved != 0 && stock_info.stock_interval == 1 || !self.stock_info_map.contains_key(&stock_info.stock_name) {
+            self.stock_info_map.insert(stock_info.stock_name.clone(), stock_info.clone());
+        }
 
         let key:(String, usize) = (stock_info.stock_name.clone(), stock_info.stock_interval);
 

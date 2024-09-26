@@ -15,14 +15,14 @@ use crate::value_store::stock_information_cache::StockInformationCache;
 pub struct NotificationServer {
     ip_server: String,
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-    subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
+    subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationServer {
     pub fn new(ip_server: String,
                connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-               subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
+               subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
         NotificationServer{ 
             ip_server: ip_server,
@@ -80,11 +80,11 @@ impl NotificationServer {
 
 fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
                             connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-                            subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
+                            subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
                             stock_information_cache: Arc<RwLock<StockInformationCache>>,
                             id: usize) {
     thread::spawn(move || {
-        let mut key_stock:(String, usize) = (String::new(), 0);
+        let mut key_stock:String = String::new();
 
         loop {
             let message_json:String = match receiver.read() {
@@ -101,36 +101,39 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
 
             let parsed_json:HashMap<String,String> = parse_json(&message_json);
 
-            if !parsed_json.contains_key("stock") || !parsed_json.contains_key("interval") {
-                println!("Error with stock and interval in thread {}", id);
-
-                continue;
-            }
+            let stock_name = match parsed_json.get("stock") {
+                Some(v) => v.to_string(),
+                None => {
+                    println!("Error with stock in thread {}", id);
+                    continue;
+                }
+            };
 
             match subscriber_map.write().unwrap().get_mut(&key_stock) {
                 Some(v) => { v.remove(&id); },
                 None => println!("Couldn't find key {:?}", &key_stock),
             };
 
-            let stock_name:String = parsed_json.get("stock").unwrap().to_string();
-            let stock_interval = match parsed_json.get("interval").unwrap().parse::<usize>(){ Ok(v) => v, _ => 0 };
+            key_stock = stock_name;
 
-            key_stock = (stock_name, stock_interval);
-
-            if &key_stock.0[..] != "*" && !stock_information_cache.read().unwrap().has_key(&key_stock) {
-                println!("Couldn't find key {:?}", key_stock);
+            if &key_stock[..] != "*" && !stock_information_cache.read().unwrap().has_key(&key_stock) {
+                println!("Couldn't find key stock_name{:?}", key_stock);
 
                 continue;
             }
 
-            let key_is_there = subscriber_map.read().unwrap().contains_key(&key_stock);
+            let has_key = subscriber_map.read().unwrap().contains_key(&key_stock);
 
-            match key_is_there {
-                true => { subscriber_map.write().unwrap().get_mut(&key_stock).unwrap().insert(id); },
-                false => { subscriber_map.write().unwrap().insert(key_stock.clone(), HashSet::from([id])); },
+            if !has_key {
+                subscriber_map.write().unwrap().insert(key_stock.clone(), HashSet::new());
+            }
+
+            match subscriber_map.write().unwrap().get_mut(&key_stock) {
+                Some(v) => v.insert(id),
+                None => panic!("Key should be in subscriber map!"),
             };
             
-            match &key_stock.0[..] {
+            match &key_stock[..] {
                 "*" => connection_queue.write().unwrap().insert(id, stock_information_cache.read().unwrap().get_vec_dashboard()),
                 _ => connection_queue.write().unwrap().insert(id, stock_information_cache.read().unwrap().get_vec_of_stock(&key_stock)),
             };

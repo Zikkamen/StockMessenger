@@ -13,14 +13,14 @@ use crate::value_store::stock_information_cache::StockInformationCache;
 pub struct NotificationClient {
     ip_client: String,
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-    subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
+    subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
     stock_information_cache: Arc<RwLock<StockInformationCache>>,
 }
 
 impl NotificationClient {
     pub fn new(ip_client: String,
                connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-               subscriber_map: Arc<RwLock<HashMap::<(String, usize), HashSet<usize>>>>,
+               subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
                stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
         NotificationClient {
             ip_client: ip_client, 
@@ -58,11 +58,10 @@ impl NotificationClient {
                     msg @ Message::Text(_) => {
                         let text: String = msg.into_text().unwrap();
                         let (name, interval, volume_moved, json) = self.stock_information_cache.write().unwrap().add_json(&text);
-                        let key:(String, usize) = (name, interval);
 
                         let mut ids_to_update:HashSet<usize> = HashSet::new();
 
-                        match self.subscriber_map.read().unwrap().get(&key){
+                        match self.subscriber_map.read().unwrap().get(&name){
                             Some(list_of_ids) => {
                                 for id in list_of_ids.iter() {
                                     ids_to_update.insert(*id);
@@ -71,8 +70,8 @@ impl NotificationClient {
                             None => (),
                         }
                         
-                        if key.1 == 1 && volume_moved > 0 {
-                            match self.subscriber_map.read().unwrap().get(&("*".to_string(), 1)){
+                        if interval == 1 && volume_moved > 0 {
+                            match self.subscriber_map.read().unwrap().get("*"){
                                 Some(list_of_ids) => {
                                     for id in list_of_ids.iter() {
                                         ids_to_update.insert(*id);

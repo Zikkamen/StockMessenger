@@ -21,7 +21,7 @@ impl WebSocketServer {
     pub fn start_server(&self) {
         let connection_queue = Arc::new(RwLock::new(HashMap::<usize, Vec<String>>::new()));
         let stock_information_cache = Arc::new(RwLock::new(StockInformationCache::new()));
-        let subscriber_map = Arc::new(RwLock::new(HashMap::<(String, usize), HashSet<usize>>::new()));
+        let subscriber_map = Arc::new(RwLock::new(HashMap::<String, HashSet<usize>>::new()));
 
         let notification_server = NotificationServer::new(
             self.ip_server.clone(),

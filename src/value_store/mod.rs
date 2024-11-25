@@ -1,4 +1,6 @@
 pub mod stock_information_cache;
-pub mod technical_analysis;
-pub mod stock_information;
+pub mod data;
 pub mod fenwick_tree;
+
+pub use crate::value_store::stock_information_cache::StockInformationCacheInterface;
+pub use crate::value_store::data::OHLCModel;

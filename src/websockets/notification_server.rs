@@ -10,20 +10,20 @@ use tungstenite::{
     Message,
 };
 
-use crate::value_store::stock_information_cache::StockInformationCache;
+use crate::value_store::StockInformationCacheInterface;
 
 pub struct NotificationServer {
     ip_server: String,
     connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
     subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
-    stock_information_cache: Arc<RwLock<StockInformationCache>>,
+    stock_information_cache: StockInformationCacheInterface,
 }
 
 impl NotificationServer {
     pub fn new(ip_server: String,
                connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
-               stock_information_cache: Arc<RwLock<StockInformationCache>>) -> Self {
+               stock_information_cache: StockInformationCacheInterface) -> Self {
         NotificationServer{ 
             ip_server: ip_server,
             connection_queue: connection_queue,
@@ -81,7 +81,7 @@ impl NotificationServer {
 fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
                             connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
                             subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
-                            stock_information_cache: Arc<RwLock<StockInformationCache>>,
+                            stock_information_cache: StockInformationCacheInterface,
                             id: usize) {
     thread::spawn(move || {
         let mut key_stock:String = String::new();
@@ -116,7 +116,7 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
 
             key_stock = stock_name;
 
-            if &key_stock[..] != "*" && !stock_information_cache.read().unwrap().has_key(&key_stock) {
+            if &key_stock[..] != "*" && !stock_information_cache.has_key(&key_stock) {
                 println!("Couldn't find key stock_name{:?}", key_stock);
 
                 continue;
@@ -134,8 +134,8 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
             };
             
             match &key_stock[..] {
-                "*" => connection_queue.write().unwrap().insert(id, stock_information_cache.read().unwrap().get_vec_dashboard()),
-                _ => connection_queue.write().unwrap().insert(id, stock_information_cache.read().unwrap().get_vec_of_stock(&key_stock)),
+                "*" => (),
+                _ => { connection_queue.write().unwrap().insert(id, stock_information_cache.get_vec_of_stock(&key_stock)); },
             };
         }
 
@@ -217,23 +217,21 @@ pub fn parse_json(json_data: &str) -> HashMap<String ,String> {
     let mut parsed_json:HashMap<String,String> = HashMap::new();
 
     for p in json_data.chars() {
-        if p == ' ' || p == '\n' || p == '\t' || p == '\"' || p == '{' || p == '}' { continue; }
-        
-        if p == ':' || p == ',' {
-            match key.len() {
-                0 => key = tmp,
-                _ => {
-                    parsed_json.insert(key, tmp);
-                    key = String::new();
-                }
-            };
-            
-            tmp = String::new();
-
-            continue;
-        }
-
-        tmp.push(p);
+        match p {
+            ' ' | '\n' | '\t' | '\"' | '{' | '}' => (),
+            ':' | ',' => {
+                match key.len() {
+                    0 => key = tmp,
+                    _ => {
+                        parsed_json.insert(key, tmp);
+                        key = String::new();
+                    }
+                };
+                
+                tmp = String::new();
+            },
+            _ => tmp.push(p),
+        };
     }
 
     if key.len() > 0 && tmp.len() > 0 { parsed_json.insert(key, tmp); } 

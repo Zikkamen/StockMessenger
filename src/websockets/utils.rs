@@ -72,7 +72,7 @@ impl ConnectionService {
     }
 
     pub fn add_stock_subscription(&self, id: usize, stock_name: &String) {
-        if !self.stock_cache.has_key(stock_name) {
+        if !self.stock_cache.has_key(stock_name) && stock_name != "Data Feed" {
             println!("Couldn't find key stock_name {:?}", stock_name);
 
             return;
@@ -102,5 +102,11 @@ impl ConnectionService {
 
     pub fn remove_subscriber(&self, id: usize) {
         self.conn_queue.write().unwrap().remove(&id);
+    }
+
+    pub fn sync_data_events(&self) {
+        let msg = self.stock_cache.retrieve_data_events();
+        let ids_to_update = self.get_subscribers(&"Data Feed".to_owned());
+        self.add_events(ids_to_update, msg);
     }
 }

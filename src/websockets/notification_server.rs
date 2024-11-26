@@ -1,8 +1,9 @@
 use std::{
     thread,
-    time::Duration,
     collections::HashMap,
     net::{TcpStream, TcpListener},
+    time::{Duration, SystemTime},
+    ops::AddAssign,
 };
 
 use tungstenite::{
@@ -99,11 +100,15 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
         println!("Closing Receiver thread {}", id);
         connection_service.remove_stock_subscription(id, &key_stock);
     });
+
+
 }
 
 fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
                           connection_service: ConnectionService,
                           id: usize) {
+    let connection_service_clone = connection_service.clone();
+
     thread::spawn(move || {
         let mut ping_cnt:usize = 0;
 
@@ -132,6 +137,25 @@ fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
         connection_service.remove_subscriber(id);
     });
 
+    thread::spawn(move || {
+        let mut target_time = SystemTime::now();
+        let unix_time = target_time
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("Time is after 1970")
+                .as_millis();
+        target_time.add_assign(Duration::from_millis(1000 - (unix_time % 1000) as u64));
+
+        loop {
+            target_time.add_assign(Duration::from_millis(1000));
+
+            connection_service_clone.sync_data_events();
+
+            match target_time.duration_since(SystemTime::now()) {
+                Ok(v) => thread::sleep(v),
+                Err(_) => (),
+            };
+        }
+    });
 }
 
 fn send_ping(sender: &mut WebSocket<TcpStream>, ping_cnt: &mut usize) -> bool {

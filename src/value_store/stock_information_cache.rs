@@ -3,7 +3,7 @@ use std::{
     collections::{HashMap, VecDeque}
 };
 
-use crate::value_store::OHLCModel;
+use crate::value_store::{OHLCModel, AnalysisInfo};
 
 struct StockInformation {
     stock_history: [VecDeque<OHLCModel>; 5],
@@ -41,6 +41,7 @@ impl StockInformation {
 }
 
 struct StockInformationCache {
+    meta_info: AnalysisInfo,
     stock_map: HashMap<String, usize>,
     stock_vec: Vec<StockInformation>,
 }
@@ -48,6 +49,7 @@ struct StockInformationCache {
 impl StockInformationCache {
     pub fn new() -> Self {
         StockInformationCache { 
+            meta_info: AnalysisInfo::new(),
             stock_map: HashMap::new(), 
             stock_vec: Vec::new(),
         }
@@ -64,10 +66,14 @@ impl StockInformationCache {
     
                     self.stock_vec.push(StockInformation::new());
                     self.stock_map.insert(ohlc_model.stock_name.clone(), n);
+                    self.meta_info.set_stock_number(n+1);
     
                     n
                 }
             };
+
+            self.meta_info.volume += ohlc_model.volume;
+            self.meta_info.trades += ohlc_model.trades;
     
             self.stock_vec[id].add_ohlc(ohlc_model.clone());
             last_ohlc_mode = ohlc_model;
@@ -98,6 +104,10 @@ impl StockInformationCache {
 
         stock_vec
     }
+
+    pub fn retrieve_data_events(&mut self) -> String {
+        self.meta_info.reset()
+    }
 }
 
 #[derive(Clone)]
@@ -122,6 +132,10 @@ impl StockInformationCacheInterface {
 
     pub fn get_vec_of_stock(&self, name: &String) -> Vec<String> {
         self.stock_cache.read().unwrap().get_vec_of_stock(name)
+    }
+
+    pub fn retrieve_data_events(&self) -> String {
+        self.stock_cache.write().unwrap().retrieve_data_events()
     }
 }
 

@@ -30,6 +30,7 @@ impl NotificationServer {
     pub fn start_server(&self) {
         let server = TcpListener::bind(self.ip_server.clone()).unwrap();
         let connection_service = self.connection_service.clone();
+        let connection_service_clone = connection_service.clone();
 
         thread::spawn(move || {
             for stream in server.incoming() {
@@ -58,6 +59,26 @@ impl NotificationServer {
         
                     println!("Spawned websocket {}", id);
                 });
+            }
+        });
+
+        thread::spawn(move || {
+            let mut target_time = SystemTime::now();
+            let unix_time = target_time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("Time is after 1970")
+                    .as_millis();
+            target_time.add_assign(Duration::from_millis(1000 - (unix_time % 1000) as u64));
+    
+            loop {
+                target_time.add_assign(Duration::from_millis(1000));
+    
+                connection_service_clone.sync_data_events();
+    
+                match target_time.duration_since(SystemTime::now()) {
+                    Ok(v) => thread::sleep(v),
+                    Err(_) => (),
+                };
             }
         });
     }
@@ -107,8 +128,6 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
 fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
                           connection_service: ConnectionService,
                           id: usize) {
-    let connection_service_clone = connection_service.clone();
-
     thread::spawn(move || {
         let mut ping_cnt:usize = 0;
 
@@ -135,26 +154,6 @@ fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
 
         println!("Error sending message. Closing Websocket {}", id);
         connection_service.remove_subscriber(id);
-    });
-
-    thread::spawn(move || {
-        let mut target_time = SystemTime::now();
-        let unix_time = target_time
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("Time is after 1970")
-                .as_millis();
-        target_time.add_assign(Duration::from_millis(1000 - (unix_time % 1000) as u64));
-
-        loop {
-            target_time.add_assign(Duration::from_millis(1000));
-
-            connection_service_clone.sync_data_events();
-
-            match target_time.duration_since(SystemTime::now()) {
-                Ok(v) => thread::sleep(v),
-                Err(_) => (),
-            };
-        }
     });
 }
 

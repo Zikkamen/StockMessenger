@@ -1,8 +1,9 @@
-use std::thread;
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
-use std::collections::{HashSet, HashMap};
-use std::net::{TcpStream, TcpListener};
+use std::{
+    thread,
+    time::Duration,
+    collections::HashMap,
+    net::{TcpStream, TcpListener},
+};
 
 use tungstenite::{
     accept,
@@ -10,43 +11,28 @@ use tungstenite::{
     Message,
 };
 
-use crate::value_store::StockInformationCacheInterface;
+use crate::websockets::ConnectionService;
 
 pub struct NotificationServer {
     ip_server: String,
-    connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-    subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
-    stock_information_cache: StockInformationCacheInterface,
+    connection_service: ConnectionService,
 }
 
 impl NotificationServer {
-    pub fn new(ip_server: String,
-               connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-               subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
-               stock_information_cache: StockInformationCacheInterface) -> Self {
+    pub fn new(ip_server: String, connection_service: ConnectionService) -> Self {
         NotificationServer{ 
             ip_server: ip_server,
-            connection_queue: connection_queue,
-            subscriber_map: subscriber_map,
-            stock_information_cache: stock_information_cache,
+            connection_service: connection_service,
         }
     }
 
     pub fn start_server(&self) {
         let server = TcpListener::bind(self.ip_server.clone()).unwrap();
-
-        let connection_queue = self.connection_queue.clone();
-        let subscriber_map = self.subscriber_map.clone();
-        let stock_information_cache = self.stock_information_cache.clone();
+        let connection_service = self.connection_service.clone();
 
         thread::spawn(move || {
-            let mut id:usize = 0;
-
             for stream in server.incoming() {
-                let id_cloned = id;
-                let connection_queue_cloned = connection_queue.clone();
-                let subscriber_map_cloned = subscriber_map.clone();
-                let stock_information_cache_cloned = stock_information_cache.clone();
+                let connection_service_clone = connection_service.clone();
 
                 thread::spawn(move || {
                     let stream_read = stream.unwrap();
@@ -54,34 +40,30 @@ impl NotificationServer {
 
                     let websocket_read = accept(stream_read).unwrap();
                     let websocket_send = WebSocket::from_raw_socket(send_stream, Role::Server, None);
-        
-                    connection_queue_cloned.write().unwrap().insert(id, Vec::new());
+
+                    let id = connection_service_clone.add_subscriber();
                     
                     start_websocket_receiver(
-                        websocket_read, connection_queue_cloned.clone(), 
-                        subscriber_map_cloned, stock_information_cache_cloned, 
-                        id_cloned
+                        websocket_read, 
+                        connection_service_clone.clone(),
+                        id
                     );
                     
                     start_websocket_sender(
                         websocket_send, 
-                        connection_queue_cloned, 
-                        id_cloned
+                        connection_service_clone, 
+                        id
                     );
         
-                    println!("Spawned websocket {}", id_cloned);
+                    println!("Spawned websocket {}", id);
                 });
-
-                id += 1;
             }
         });
     }
 }
 
 fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
-                            connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-                            subscriber_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
-                            stock_information_cache: StockInformationCacheInterface,
+                            connection_service:ConnectionService,
                             id: usize) {
     thread::spawn(move || {
         let mut key_stock:String = String::new();
@@ -99,7 +81,7 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
                 },
             };
 
-            let parsed_json:HashMap<String,String> = parse_json(&message_json);
+            let parsed_json = parse_json(&message_json);
 
             let stock_name = match parsed_json.get("stock") {
                 Some(v) => v.to_string(),
@@ -108,61 +90,25 @@ fn start_websocket_receiver(mut receiver: WebSocket<TcpStream>,
                     continue;
                 }
             };
-
-            match subscriber_map.write().unwrap().get_mut(&key_stock) {
-                Some(v) => { v.remove(&id); },
-                None => println!("Couldn't find key {:?}", &key_stock),
-            };
-
-            key_stock = stock_name;
-
-            if &key_stock[..] != "*" && !stock_information_cache.has_key(&key_stock) {
-                println!("Couldn't find key stock_name{:?}", key_stock);
-
-                continue;
-            }
-
-            let has_key = subscriber_map.read().unwrap().contains_key(&key_stock);
-
-            if !has_key {
-                subscriber_map.write().unwrap().insert(key_stock.clone(), HashSet::new());
-            }
-
-            match subscriber_map.write().unwrap().get_mut(&key_stock) {
-                Some(v) => v.insert(id),
-                None => panic!("Key should be in subscriber map!"),
-            };
             
-            match &key_stock[..] {
-                "*" => (),
-                _ => { connection_queue.write().unwrap().insert(id, stock_information_cache.get_vec_of_stock(&key_stock)); },
-            };
+            connection_service.remove_stock_subscription(id, &key_stock);
+            key_stock = stock_name;
+            connection_service.add_stock_subscription(id, &key_stock);
         }
 
         println!("Closing Receiver thread {}", id);
-
-        match subscriber_map.write().unwrap().get_mut(&key_stock) {
-            Some(v) => { v.remove(&id); },
-            None => (),
-        };
+        connection_service.remove_stock_subscription(id, &key_stock);
     });
 }
 
 fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
-                   connection_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
-                   id: usize) {
+                          connection_service: ConnectionService,
+                          id: usize) {
     thread::spawn(move || {
         let mut ping_cnt:usize = 0;
 
         loop {
-            if connection_queue.read().unwrap().len() > 1000 { 
-                continue; 
-            }
-
-            let connection_vec = match connection_queue.read().unwrap().get(&id) {
-                Some(v) => v.clone(),
-                None => break,
-            };
+            let connection_vec = connection_service.read_events(&id);
 
             if connection_vec.len() == 0 {
                 thread::sleep(Duration::from_millis(10));
@@ -174,13 +120,8 @@ fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
                 continue;
             }
 
-            match connection_queue.write().unwrap().get_mut(&id) {
-                Some(v) => v.clear(),
-                None => break,
-            };
-
-            for update in connection_vec.iter() {
-                match sender.send(Message::Text(update.to_string())) {
+            for update in connection_vec.into_iter() {
+                match sender.send(Message::Text(update)) {
                     Ok(v) => v,
                     Err(_) => break,
                 }
@@ -188,7 +129,7 @@ fn start_websocket_sender(mut sender: WebSocket<TcpStream>,
         }
 
         println!("Error sending message. Closing Websocket {}", id);
-        connection_queue.write().unwrap().remove(&id);
+        connection_service.remove_subscriber(id);
     });
 
 }

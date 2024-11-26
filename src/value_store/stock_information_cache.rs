@@ -54,23 +54,26 @@ impl StockInformationCache {
     }
 
     pub fn add_json(&mut self, json_data: String) -> OHLCModel {
-        let ohlc_model:OHLCModel = OHLCModel::from_string(json_data);
+        let mut last_ohlc_mode = OHLCModel::new();
 
-        let id = match self.stock_map.get(&ohlc_model.stock_name) {
-            Some(v) => *v,
-            None => {
-                let n = self.stock_vec.len();
+        for ohlc_model in parse_ohlc_models(json_data).into_iter() {
+            let id = match self.stock_map.get(&ohlc_model.stock_name) {
+                Some(v) => *v,
+                None => {
+                    let n = self.stock_vec.len();
+    
+                    self.stock_vec.push(StockInformation::new());
+                    self.stock_map.insert(ohlc_model.stock_name.clone(), n);
+    
+                    n
+                }
+            };
+    
+            self.stock_vec[id].add_ohlc(ohlc_model.clone());
+            last_ohlc_mode = ohlc_model;
+        }
 
-                self.stock_vec.push(StockInformation::new());
-                self.stock_map.insert(ohlc_model.stock_name.clone(), n);
-
-                n
-            }
-        };
-
-        self.stock_vec[id].add_ohlc(ohlc_model.clone());
-
-        ohlc_model
+        last_ohlc_mode
     }
 
     pub fn has_key(&self, name: &String) -> bool {
@@ -120,4 +123,21 @@ impl StockInformationCacheInterface {
     pub fn get_vec_of_stock(&self, name: &String) -> Vec<String> {
         self.stock_cache.read().unwrap().get_vec_of_stock(name)
     }
+}
+
+fn parse_ohlc_models(json_data: String) -> Vec<OHLCModel> {
+    let mut ohlc_models = Vec::<OHLCModel>::new();
+    let mut tmp = String::new();
+
+    for c in json_data.chars() {
+        tmp.push(c);
+
+        if c == '\n' {
+            ohlc_models.push(OHLCModel::from_string(tmp));
+
+            tmp = String::new();
+        }
+    }
+
+    ohlc_models
 }

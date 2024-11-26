@@ -72,8 +72,8 @@ impl ConnectionService {
     }
 
     pub fn add_stock_subscription(&self, id: usize, stock_name: &String) {
-        if self.stock_cache.has_key(stock_name) {
-            println!("Couldn't find key stock_name{:?}", stock_name);
+        if !self.stock_cache.has_key(stock_name) {
+            println!("Couldn't find key stock_name {:?}", stock_name);
 
             return;
         }

@@ -12,6 +12,20 @@ pub struct OHLCModel {
 }
 
 impl OHLCModel {
+    pub fn new() -> Self {
+        OHLCModel {
+            stock_name: String::new(),
+            price_open: 0.0,
+            price_close: 0.0,
+            min_price: 0.0,
+            max_price: 0.0,
+            volume: 0.0,
+            trades: 0,
+            timestamp: 0,
+            stock_interval: 0,
+        }
+    }
+
     pub fn from_string(s: String) -> Self {
         let mut ohlc_model = OHLCModel {
             stock_name: String::new(),

@@ -8,6 +8,7 @@ use crate::value_store::{StockInformationCacheInterface, OHLCModel};
 #[derive(Clone)]
 pub struct ConnectionService {
     stock_cache: StockInformationCacheInterface,
+    current_id: Arc<RwLock<usize>>,
     conn_queue: Arc<RwLock<HashMap::<usize, Vec<String>>>>,
     subscr_map: Arc<RwLock<HashMap::<String, HashSet<usize>>>>,
 }
@@ -16,6 +17,7 @@ impl ConnectionService {
     pub fn new() -> Self {
         ConnectionService {
             stock_cache: StockInformationCacheInterface::new(),
+            current_id: Arc::new(RwLock::new(0)),
             conn_queue: Arc::new(RwLock::new(HashMap::new())),
             subscr_map: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -72,7 +74,7 @@ impl ConnectionService {
     }
 
     pub fn add_stock_subscription(&self, id: usize, stock_name: &String) {
-        if !self.stock_cache.has_key(stock_name) && stock_name != "Data Feed" {
+        if !self.stock_cache.has_key(stock_name) && stock_name != "DataFeed" {
             println!("Couldn't find key stock_name {:?}", stock_name);
 
             return;
@@ -94,10 +96,12 @@ impl ConnectionService {
 
     pub fn add_subscriber(&self) -> usize {
         let mut conn_queue = self.conn_queue.write().unwrap();
-        let n = conn_queue.len();
-        conn_queue.insert(n, Vec::new());
 
-        n
+        let mut current_id = self.current_id.write().unwrap();
+        *current_id += 1;
+        conn_queue.insert(*current_id-1, Vec::new());
+
+        *current_id-1
     }
 
     pub fn remove_subscriber(&self, id: usize) {
@@ -106,7 +110,7 @@ impl ConnectionService {
 
     pub fn sync_data_events(&self) {
         let msg = self.stock_cache.retrieve_data_events();
-        let ids_to_update = self.get_subscribers(&"Data Feed".to_owned());
+        let ids_to_update = self.get_subscribers(&"DataFeed".to_owned());
         self.add_events(ids_to_update, msg);
     }
 }

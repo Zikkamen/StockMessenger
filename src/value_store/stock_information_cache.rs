@@ -72,9 +72,7 @@ impl StockInformationCache {
                 }
             };
 
-            self.meta_info.volume += ohlc_model.volume;
-            self.meta_info.trades += ohlc_model.trades;
-    
+            self.meta_info.add_ohlc(&ohlc_model);
             self.stock_vec[id].add_ohlc(ohlc_model.clone());
             last_ohlc_mode = ohlc_model;
         }
@@ -87,6 +85,10 @@ impl StockInformationCache {
     }
 
     pub fn get_vec_of_stock(&self, name: &String) -> Vec<String> {
+        if name == "DataFeed" {
+            return self.meta_info.get_history();
+        }
+
         let id = match self.stock_map.get(name) {
             Some(v) => *v,
             None => return Vec::new(),

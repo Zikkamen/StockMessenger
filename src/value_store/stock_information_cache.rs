@@ -107,8 +107,8 @@ impl StockInformationCache {
         stock_vec
     }
 
-    pub fn retrieve_data_events(&mut self) -> String {
-        self.meta_info.reset()
+    pub fn retrieve_data_events(&mut self, timestamp: u128) -> String {
+        self.meta_info.reset(timestamp)
     }
 }
 
@@ -136,8 +136,8 @@ impl StockInformationCacheInterface {
         self.stock_cache.read().unwrap().get_vec_of_stock(name)
     }
 
-    pub fn retrieve_data_events(&self) -> String {
-        self.stock_cache.write().unwrap().retrieve_data_events()
+    pub fn retrieve_data_events(&self, timestamp: u128) -> String {
+        self.stock_cache.write().unwrap().retrieve_data_events(timestamp)
     }
 }
 

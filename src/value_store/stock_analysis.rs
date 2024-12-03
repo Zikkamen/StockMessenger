@@ -32,12 +32,13 @@ impl AnalysisInfo {
         self.stocks = n;
     }
 
-    pub fn reset(&mut self) -> String {
+    pub fn reset(&mut self, timestamp: u128) -> String {
         let stock_info = json!({
             "stock_n": self.stocks,
             "trade_n": self.trades,
             "volume_n": self.volume,
             "market_v_n": self.market_value,
+            "timestamp": timestamp,
         }).to_string();
 
         self.trades = 0;

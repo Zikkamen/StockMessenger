@@ -72,8 +72,13 @@ impl NotificationServer {
     
             loop {
                 target_time.add_assign(Duration::from_millis(1000));
+
+                let unix_time = target_time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("Time is after 1970")
+                    .as_millis();
     
-                connection_service_clone.sync_data_events();
+                connection_service_clone.sync_data_events(unix_time);
     
                 match target_time.duration_since(SystemTime::now()) {
                     Ok(v) => thread::sleep(v),

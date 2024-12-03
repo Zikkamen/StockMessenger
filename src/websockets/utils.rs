@@ -108,8 +108,8 @@ impl ConnectionService {
         self.conn_queue.write().unwrap().remove(&id);
     }
 
-    pub fn sync_data_events(&self) {
-        let msg = self.stock_cache.retrieve_data_events();
+    pub fn sync_data_events(&self, timestamp: u128) {
+        let msg = self.stock_cache.retrieve_data_events(timestamp);
         let ids_to_update = self.get_subscribers(&"DataFeed".to_owned());
         self.add_events(ids_to_update, msg);
     }
